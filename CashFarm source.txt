@@ -1,0 +1,2008 @@
+--> [[ Load Script Macros ]] <--
+
+if not LPH_OBFUSCATED then    
+	LPH_JIT = function(...) return ... end
+	LPH_CRASH = function() return error(debug.traceback()) end
+	LPH_ENCNUM = function(...) return ... end
+	LPH_ENCSTR = function(...) return ... end
+	LPH_JIT_MAX = function(...) return ... end
+	LPH_HOOK_FIX = function(...) return ... end
+	LPH_JIT_ULTRA = function(...) return ... end
+	LPH_NO_UPVALUES = function(f) return(function(...) return f(...) end) end
+	LPH_NO_VIRTUALIZE = function(...) return ... end
+end
+
+--> [[ Load Game ]] <--
+
+if not game:IsLoaded() then
+	while not game:IsLoaded() do
+		task.wait()
+	end
+end
+
+--> [[ Load Execution Check ]] <--
+
+if getgenv()._CASHFARM_EXECUTED then
+	return
+else
+	getgenv()._CASHFARM_EXECUTED = true
+end
+
+--> [[ Load Services ]] <--
+
+local Services = setmetatable({}, {
+	__index = function(_, service)
+		return game:GetService(service)
+	end
+})
+
+local Teams = Services.Teams
+local Players = Services.Players
+local CoreGui = Services.CoreGui
+local Workspace = Services.Workspace
+local Lighting = Services.Lighting
+local StarterGui = Services.StarterGui
+local RunService = Services.RunService
+local HttpService = Services.HttpService
+local VirtualUser = Services.VirtualUser
+local TweenService = Services.TweenService
+local TeleportService = Services.TeleportService
+local UserInputService = Services.UserInputService
+local TextChatService = Services.TextChatService
+local ReplicatedStorage = Services.ReplicatedStorage
+local CollectionService = Services.CollectionService
+local VirtualInputManager = Services.VirtualInputManager
+
+--> [[ Load Variables ]] <--
+
+local Enabled = true
+local Player = Players.LocalPlayer
+local Backpack = Player:WaitForChild("Folder")
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local Leaderstats = Player:WaitForChild("leaderstats")
+local IsArrested = function() return PlayerGui.MainGui.CellTime.Visible or Backpack:FindFirstChild("Cuffed") end
+local Camera = Workspace.CurrentCamera
+local Character = nil
+local Humanoid = nil
+local Root = nil
+local Vehicle = nil
+local KillAuraPaused = false
+local Wait = task.wait
+local Delay = task.delay
+local Spawn = task.spawn
+local MathFloor = math.floor
+local CFrameNew = CFrame.new
+local Vector3New = Vector3.new
+local TableRemove = table.remove
+local TableInsert = table.insert
+local TableFind = table.find
+local StringFind = string.find
+local RaycastParams = RaycastParams.new()
+RaycastParams.IgnoreWater = true
+RaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+--> [[ Load Modules ]] <--
+
+local Modules = {
+	UI = require(ReplicatedStorage.Module.UI),
+	NPC = require(ReplicatedStorage.NPC.NPC),
+	Store = require(ReplicatedStorage.App.store),
+	RayCast = require(ReplicatedStorage.Module.RayCast),
+	GunItem = require(ReplicatedStorage.Game.Item.Gun),
+	TagUtils = require(ReplicatedStorage.Tag.TagUtils),
+	GunShopUI = require(ReplicatedStorage.Game.GunShop.GunShopUI),
+	ItemSystem = require(ReplicatedStorage.Game.ItemSystem.ItemSystem),
+	Notification = require(ReplicatedStorage.Game.Notification),
+	SafesConsts = require(ReplicatedStorage.Safes.SafesConsts),
+	TeamChooseUI = require(ReplicatedStorage.TeamSelect.TeamChooseUI),
+	VehicleUtils = require(ReplicatedStorage.Vehicle.VehicleUtils),
+	GunShopUtils = require(ReplicatedStorage.Game.GunShop.GunShopUtils),
+	RobberyConsts = require(ReplicatedStorage.Robbery.RobberyConsts),
+	CharacterUtil = require(ReplicatedStorage.Game.CharacterUtil),
+	BulletEmitter = require(ReplicatedStorage.Game.ItemSystem.BulletEmitter),
+	InventoryItem = require(ReplicatedStorage.Inventory.InventoryItem),
+	MansionRobberyUtils = require(ReplicatedStorage.MansionRobbery.MansionRobberyUtils),
+	BossNPCConsts = require(ReplicatedStorage.MansionRobbery.BossNPCConsts)
+}
+
+local RobberyState = ReplicatedStorage:WaitForChild("RobberyState")
+local GetVehicleModel = Modules.VehicleUtils.GetLocalVehicleModel
+local Specs = Modules.UI.CircleAction.Specs
+local OldIsPointInTag = Modules.Notification.new
+local OldRaycastIgnoreList = Modules.RayCast.RayIgnoreNonCollideWithIgnoreList
+local OldNpcNew = Modules.NPC.new
+
+--> [[ Load Directory ]] <--
+
+local function GetDirectory()
+	local Directory = "Cashfarm"
+
+	if not isfolder(Directory) then
+		makefolder(Directory)
+	end
+
+	return Directory
+end
+
+local function GetHeader(name)
+	local Header = GetDirectory() .. "/" .. name 
+
+	if not isfolder(Header) then
+		makefolder(Header)
+	end
+
+	return Header
+end
+
+local function SaveFile(file, data)
+	local Success, _ = pcall(writefile, file, data)
+
+	return Success
+end
+
+local function LoadFile(path, name)
+	local Success, Data = pcall(readfile, path .. "\\" .. name)
+
+	return Success and Data or nil
+end
+
+--> [[ Load Configuration ]] <--
+
+local Config = {
+	SmallServers = true,
+	CollectCash = true,
+	FpsBooster = false,
+	ChatSpam = false,
+	CargoShip = true,
+	Airdrop = true,
+	Mansion = true,
+	[Player.Name] = 0,
+	RobRedCrates = true,
+	RobBlueCrates = true,
+	RobBrownCrates = true,
+	AutoOpenSafes = true,
+	LogWebhook = false,
+	LogHypers = false,
+	WebhookUrl = false,
+	KillAura = false,
+	KillAuraDistance = 600,
+	FlightSpeed = 175,
+}
+
+local MainHeader = GetHeader("Autocrate")
+local ConfigFile = LoadFile(MainHeader, "Config")
+
+if ConfigFile then
+	local Success, Data = pcall(function()
+		return HttpService:JSONDecode(ConfigFile)
+	end)
+
+	if Success then
+		for i, v in Data do 
+			Config[i] = v
+		end
+	end
+end
+
+local function SaveConfig()
+	local Success, _ = pcall(SaveFile, MainHeader .. "\\Config", HttpService:JSONEncode(Config))
+
+	return Success
+end
+
+--> [[ Load Statistics ]] <--
+
+if not getgenv()._StartingCash then
+	getgenv()._StartingCash = Leaderstats.Money.Value
+end
+
+if not getgenv()._StartingTime then
+	getgenv()._StartingTime = tick()
+end
+
+--> [[ Load Serverhop ]] <--
+
+local CanServerHop              = true
+local ServerHopping             = false
+local ServerSuccess             = false
+local ServerQueue               = ""
+
+local Server, Servers = nil, nil
+
+local function ServerSwitch()
+	if ServerHopping then return end
+	if not CanServerHop then repeat Wait(0.01) until CanServerHop end
+
+	ServerHopping = true
+	KillAuraPaused = true
+
+	local ScriptFile = GetHeader("Autocrate") .. "/Script.lua"
+	SaveFile(ScriptFile, game:HttpGet("https://cashfarm.cc/Autocrate.lua"))
+
+	if LPH_OBFUSCATED then
+		ServerQueue = ([[
+			getgenv()._StartingCash = ]] .. getgenv()._StartingCash .. [[
+			getgenv()._StartingTime = ]] .. getgenv()._StartingTime .. [[
+
+			if not game:IsLoaded() then
+				while not game:IsLoaded() do
+					task.wait()
+				end
+			end
+
+           	local Success, _ = pcall(function()
+		 		loadfile("]] .. tostring(ScriptFile) .. [[")()
+			end)
+
+			if not Success then
+				loadstring(game:HttpGet("https://cashfarm.cc/Autocrate.lua"))()
+			end
+        ]])
+	else
+		ServerQueue = ([[ 
+			getgenv()._StartingCash = ]] .. getgenv()._StartingCash .. [[
+			getgenv()._StartingTime = ]] .. getgenv()._StartingTime .. [[
+
+			if not game:IsLoaded() then
+				while not game:IsLoaded() do
+					task.wait()
+				end
+			end
+		]])
+	end
+
+	queue_on_teleport(ServerQueue)
+
+	Player.OnTeleport:Connect(function(state)
+		if state == Enum.TeleportState.Started then
+			ServerSuccess = true
+		end
+	end)
+
+	while not ServerSuccess do
+		pcall(function()
+			repeat
+				Servers = HttpService:JSONDecode(game:HttpGet("https://cdn.cashfarm.cc/servers" .. ((Config.SmallServers and "") or "?type=big")))
+				Server = Servers.Data[math.random(1, #Servers.Data)]
+			until Servers and Servers["Success"] and Server and Server.playing < (Server.maxPlayers - 2) and Server.id ~= game.JobId
+
+			pcall(function()
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, Server.id, Player)
+				TeleportService.TeleportInitFailed:Wait()
+			end)
+
+			if ServerSuccess then
+				Wait(math.huge)
+			end
+		end)
+	end
+end
+
+Delay(300, ServerSwitch)
+
+local Loaded = false
+
+Delay(10, function()
+	if not Loaded then
+		ServerSwitch()
+	end
+end)
+
+Spawn(function()
+	while not pcall(function()
+			CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+				if child.Name == "ErrorPrompt" and child:FindFirstChild("MessageArea") and child.MessageArea:FindFirstChild("ErrorFrame") then
+					ServerSwitch()
+				end
+			end)
+		end) do
+		Wait(0.1)
+	end
+end)
+
+--> [[ Load Formatting ]] <--
+
+local function FormatMoney(int)
+	local Numbers = tostring(int):split("")
+
+	if #Numbers >= 10 then
+		return Numbers[1] .. "." .. Numbers[2] .. "B"
+	elseif #Numbers == 9 then
+		return Numbers[1] .. Numbers[2] .. Numbers[3] .. "M"
+	elseif #Numbers == 8 then
+		return Numbers[1] .. Numbers[2] .. "." .. Numbers[3] .. "M"
+	elseif #Numbers == 7 then
+		return Numbers[1] .. "." .. Numbers[2] .. "M"
+	elseif #Numbers == 6 then
+		return Numbers[1] .. Numbers[2] .. Numbers[3] .. "k"
+	elseif #Numbers == 5 then
+		return Numbers[1] .. Numbers[2] .. "." .. Numbers[3] .. "k"
+	elseif #Numbers == 4 and #Numbers[2] == 0 then
+		return Numbers[1] .. "k"
+	elseif #Numbers == 4 then
+		return Numbers[1] .. "." .. Numbers[2] .. "k"
+	end	
+
+	return int
+end
+
+local function FormatTime(seconds)
+	local Hours = MathFloor(seconds / 3600)
+	local Days = MathFloor(Hours % 24)
+	local Minutes = MathFloor((seconds % 3600) / 60)
+	local Seconds = MathFloor((seconds % 60))
+
+	return Hours .. "h/" .. Minutes .. "m/" .. Seconds .. "s"
+end
+
+
+--> [[ Load Robberies ]] <--
+
+local OnOpen                  = Instance.new("BindableEvent")
+
+local Robberies               = setmetatable({
+	["Cargo Ship"]            = {
+		ID                    = Modules.RobberyConsts.ENUM_ROBBERY.CARGO_SHIP,
+		Open                  = false,
+		Status                = 3,
+		Robbed                = false,
+		Callback              = function() end
+	},
+
+	["Mansion"]               = {
+		ID                    = Modules.RobberyConsts.ENUM_ROBBERY.MANSION,
+		Open                  = false,
+		Status                = 3,
+		Robbed                = false,
+		Callback              = function() end
+	},
+
+	["Airdrop"]               = {
+		Callback              = function() end
+	}
+}, {
+	__index = {
+		OnOpen = {
+			Fire = function(_, ...)
+				OnOpen:Fire(...)
+			end,
+
+			Connect = function(_, ...)
+				OnOpen.Event:Connect(...)
+			end
+		}
+	}
+})
+
+for _, v in RobberyState:GetChildren() do
+	for i2, v2 in Robberies do
+		if v.Name == tostring(v2.ID) then
+			v2.Status = v.Value
+
+			if i2 == "Mansion" then
+				v2.Open = (v.Value == 1)
+			else
+				v2.Open = (v.Value ~= 3)
+			end
+
+			if not v2.Open then
+				v2.Robbed = false
+			end
+
+			Robberies.OnOpen:Fire(i2, v2.Open)
+
+			if not v2.Open then
+				v2.Robbed = false
+			end
+
+			v:GetPropertyChangedSignal("Value"):Connect(function()
+				v2.Status = v.Value
+
+				if i2 == "Mansion" then
+					v2.Open = (v.Value == 1)
+				else
+					v2.Open = (v.Value ~= 3)
+				end
+
+				Robberies.OnOpen:Fire(i2, v2.Open)
+
+				if not v2.Open then
+					v2.Robbed = false
+				end
+			end)
+
+			break
+		end
+	end
+end
+
+RobberyState.ChildAdded:Connect(function(v)
+	for i2, v2 in Robberies do
+		if v.Name == tostring(v2.ID) then
+			v2.Status = v.Value
+
+			if i2 == "Mansion" then
+				v2.Open = (v.Value == 1)
+			else
+				v2.Open = (v.Value ~= 3)
+			end
+
+			if not v2.Open then
+				v2.Robbed = false
+			end
+
+			v:GetPropertyChangedSignal("Value"):Connect(function()
+				v2.Status = v.Value
+
+				if i2 == "Mansion" then
+					v2.Open = (v.Value == 1)
+				else
+					v2.Open = (v.Value ~= 3)
+				end
+
+				if not v2.Open then
+					v2.Robbed = false
+				end
+			end)
+
+			break
+		end
+	end
+end)
+
+local function GetAirdropModel()
+	for _, v in Workspace:GetChildren() do
+		if v:IsA("Model") and v.Name == "Drop" and not v:GetAttribute("BriefcaseCollected") then
+			if Config.RobRedCrates and v.Top.BrickColor == BrickColor.new("Dark red")  then
+				return v
+			elseif Config.RobBlueCrates and v.Top.BrickColor == BrickColor.new("Storm blue") then
+				return v
+			elseif Config.RobBrownCrates and v.Top.BrickColor == BrickColor.new("Dark orange") then
+				return v
+			else
+				continue
+			end
+		end
+	end
+
+	return nil
+end
+
+--> [[ Load UI ]] <--
+
+do
+	local Library = loadstring(game:HttpGet(""))()
+
+	local Window = Library:CreateGui("Cashfarm Autocrate [PAID]", {
+		Theme = Color3.fromRGB(73, 255, 170),
+		Theme2 = Color3.fromRGB(27, 95, 62)
+	})
+
+	local MainTab = Window:CreateTab("Main"):SetDefault()
+	local RobberiesTab = Window:CreateTab("Robberies")
+	local SettingsTab = Window:CreateTab("Settings")
+	local CreditsTab = Window:CreateTab("Credits")
+
+	local MainSec = MainTab:CreateSection("Main")
+
+	MainSec:CreateToggle("Enabled", function(bool)
+		Enabled = bool
+	end, { Enabled = Enabled })
+
+	MainSec:CreateToggle("Small Servers", function(bool)
+		Config.SmallServers = bool
+		SaveConfig()
+	end, { Enabled = Config.SmallServers })
+
+	MainSec:CreateToggle("Collect Cash", function(bool)
+		Config.CollectCash = bool
+		SaveConfig()
+	end, { Enabled = Config.CollectCash })
+
+	MainSec:CreateToggle("Fps Booster", function(bool)
+		Config.FpsBooster = bool
+		SaveConfig()
+	end, { Enabled = Config.FpsBooster })
+
+	MainSec:CreateToggle("Chat Spam", function(bool)
+		Config.ChatSpam = bool
+		SaveConfig()
+	end, { Enabled = Config.ChatSpam })
+
+	local StatsSec = MainTab:CreateSection("Stats", "Right")
+
+	local Status = StatsSec:CreateTextlabel("Loading..")
+
+	StatsSec:CreateDividor()
+
+	local MoneyEarned = StatsSec:CreateTextlabel("Earnings: $0")
+	local ElapsedTime = StatsSec:CreateTextlabel("Time: 0h/0m/0s")
+	local EstimatedHourly = StatsSec:CreateTextlabel("Hourly: $0")
+
+	local RobberieStatusSec = RobberiesTab:CreateSection("Status")
+
+	local CargoShipStatus = RobberieStatusSec:CreateTextlabel("Cargo Ship")
+	CargoShipStatus:SetColor(Color3.new(255, 0, 0))
+
+	local AirdropStatus = RobberieStatusSec:CreateTextlabel("Airdrop")
+	AirdropStatus:SetColor(Color3.new(255, 0, 0))
+
+	local MansionStatus = RobberieStatusSec:CreateTextlabel("Mansion")
+	MansionStatus:SetColor(Color3.new(255, 0, 0))
+
+	local RobberieToggleSec = RobberiesTab:CreateSection("Toggles", "Right")
+
+	RobberieToggleSec:CreateToggle("Cargo Ship", function(bool)
+		Config.CargoShip = bool
+		SaveConfig()
+	end, { Enabled = Config.CargoShip })
+
+	RobberieToggleSec:CreateToggle("Airdrop", function(bool)
+		Config.Airdrop = bool
+		SaveConfig()
+	end, { Enabled = Config.Airdrop })
+
+	RobberieToggleSec:CreateToggle("Mansion", function(bool)
+		Config.Mansion = bool
+		SaveConfig()
+	end, { Enabled = Config.Mansion })
+
+	local AirdropRaritiesSec = RobberiesTab:CreateSection("Airdrop Rarities")
+
+	AirdropRaritiesSec:CreateToggle("Rob Red Crates", function(bool)
+		Config.RobRedCrates = bool
+		SaveConfig()
+	end, { Enabled = Config.RobRedCrates })
+
+	AirdropRaritiesSec:CreateToggle("Rob Blue Crates", function(bool)
+		Config.RobBlueCrates = bool
+		SaveConfig()
+	end, { Enabled = Config.RobBlueCrates })
+
+	AirdropRaritiesSec:CreateToggle("Rob Brown Crates", function(bool)
+		Config.RobBrownCrates = bool
+		SaveConfig()
+	end, { Enabled = Config.RobBrownCrates })
+
+	local MansionInvitesSec = RobberiesTab:CreateSection("Mansion Invites", "Right")
+	local MansionInvites = MansionInvitesSec:CreateTextlabel("Invites: 0")
+
+	local SafesSec = SettingsTab:CreateSection("Safes")
+
+	SafesSec:CreateToggle("Auto Open Safes", function(bool)
+		Config.AutoOpenSafes = bool
+		SaveConfig()
+	end, { Enabled = Config.AutoOpenSafes })
+
+	SafesSec:CreateButton("Open All Safes", function()
+		local SafeAmount = #Modules.Store._state.safesInventoryItems
+
+		if SafeAmount ~= 0 then
+			task.spawn(function()
+				for _ = 1, SafeAmount do
+					local CurrentSafe = Modules.Store._state.safesInventoryItems[1]
+
+					ReplicatedStorage[Modules.SafesConsts.SAFE_OPEN_REMOTE_NAME]:FireServer(CurrentSafe.itemOwnedId)
+					task.wait(3)
+				end
+			end)
+		end
+	end)
+
+	local WebhookSec = SettingsTab:CreateSection("Webhook", "Right")
+
+	WebhookSec:CreateToggle("Log Webhook", function(bool)
+		Config.LogWebhook = bool
+		SaveConfig()
+	end, { Enabled = Config.LogWebhook })
+
+	WebhookSec:CreateToggle("Log Hypers", function(bool)
+		Config.LogHypers = bool
+		SaveConfig()
+	end, { Enabled = Config.LogHypers })
+
+	WebhookSec:CreateTextbox("Webhook Url", function(string)
+		Config.WebhookUrl = string
+		SaveConfig()
+	end, { Text = (Config.WebhookUrl or "Webhook Url") }, { RememberLastText = true })
+
+	local KillAuraSec = SettingsTab:CreateSection("Kill Aura")
+
+	KillAuraSec:CreateToggle("Kill Aura", function(bool)
+		Config.KillAura = bool
+		SaveConfig()
+	end, { Enabled = Config.KillAura })
+
+	KillAuraSec:CreateSlider("Kill Distance", function(int)
+		Config.KillAuraDistance = int
+		SaveConfig()
+	end, { Min = 100, Max = 1000, Value = Config.KillAuraDistance })
+
+	local SpeedsSec = SettingsTab:CreateSection("Speeds", "Right")
+
+	SpeedsSec:CreateSlider("Flight Speed", function(int)
+		Config.FlightSpeed = int
+		SaveConfig()
+	end, { Min = 155, Max = 175, Value = Config.FlightSpeed })
+
+	local CreditsSec = CreditsTab:CreateSection("Credits")
+
+	CreditsSec:CreateTextlabel("tempiscold - Scripting")
+	CreditsSec:CreateTextlabel("https://cashfarm.cc")
+	CreditsSec:CreateTextlabel("discord.gg/cashfarm")
+
+	local UIControlSec = CreditsTab:CreateSection("UI Controls", "Right")
+
+	UIControlSec:CreateKeybind("Toggle Gui", Window.Toggle, { Bind = Enum.KeyCode.RightShift })
+
+	function UpdateStatus(text) 
+		Spawn(function()
+			local function StatusFix()
+				Status:Set(tostring(text))
+			end
+
+			while not pcall(StatusFix) do
+				Wait(0.01)
+			end
+		end)
+	end
+
+	function UpdateRobberyStats()
+		Spawn(function()
+			local function StatusFix()
+				CargoShipStatus:SetColor(Robberies["Cargo Ship"].Open and Color3.new(0, 255, 0) or Color3.new(255, 0, 0))
+				AirdropStatus:SetColor(GetAirdropModel() and Color3.new(0, 255, 0) or Color3.new(255, 0, 0))
+				MansionStatus:SetColor(Robberies.Mansion.Open and Color3.new(0, 255, 0) or Color3.new(255, 0, 0))
+			end
+
+			while not pcall(StatusFix) do
+				Wait(0.01)
+			end
+		end)
+	end
+
+	function UpdateStats(money, time) 
+		Spawn(function()
+			local function FixStats()
+				ElapsedTime:Set("Time: " .. FormatTime(time))
+				MoneyEarned:Set("Money: $" .. FormatMoney(money))
+			end
+
+			while not pcall(FixStats) do
+				Wait(0.01)
+			end
+		end)
+
+		Spawn(function()
+			local function FixEstimation()
+				EstimatedHourly:Set("Hourly: $" .. FormatMoney(MathFloor(money / time * 3600)))
+			end
+
+			while not pcall(FixEstimation) do
+				Wait(0.01)
+			end
+		end)
+	end
+
+	function UpdateMansionInvites(invites)
+		Spawn(function()
+			local function StatusFix()
+				MansionInvites:Set("Invites: " .. tostring(invites))
+			end
+
+			while not pcall(StatusFix) do
+				Wait(0.01)
+			end
+		end)
+	end
+end
+
+local MoneyEarned, ElapsedTime = 0, 0
+
+Spawn(function()
+	while Wait(0.1) do
+		pcall(function()
+			MoneyEarned = Leaderstats.Money.Value - getgenv()._StartingCash
+		end)
+
+		pcall(function()
+			ElapsedTime = tick() - getgenv()._StartingTime
+		end)
+
+		RunService:Set3dRenderingEnabled((not Config.FpsBooster))
+		UpdateStats(MoneyEarned, ElapsedTime)
+		UpdateMansionInvites(Config[Player.Name])
+		UpdateRobberyStats()
+	end
+end)
+
+--> [[ Load Safe Enviornment ]] <--
+
+Modules.TagUtils.isPointInTag = newcclosure(function(point, tag)
+	if TableFind({"NoFallDamage", "NoRagdoll"}, tag) then 
+		return true 
+	end
+
+	return OldIsPointInTag(point, tag)
+end)
+
+Spawn(function()
+	pcall(function()
+		Workspace:WaitForChild("OilRig", 999).Turrets:Destroy()
+	end)
+end)
+
+--> [[ Load Player ]] <--
+
+local function OnPlayerAdded(char)
+	Character = char
+	Humanoid = char:WaitForChild("Humanoid")
+	Root = char:WaitForChild("HumanoidRootPart")
+
+	if Humanoid:FindFirstChild("HumanoidUnloadExists") then
+		Humanoid.BreakJointsOnDeath = false 
+		Humanoid.HumanoidUnloadExists:Destroy()
+	end
+
+	if Humanoid:FindFirstChild("HumanoidUnloadNetworkOwnerId") then
+		Humanoid.HumanoidUnloadNetworkOwnerId:Destroy()
+	end
+
+	if Humanoid:FindFirstChild("HumanoidUnloadServerPosition") then
+		Humanoid.HumanoidUnloadServerPosition:Destroy()
+	end
+
+	pcall(function()
+		if Player.PlayerScripts:FindFirstChild("HumanoidUnload") and Player.PlayerScripts.HumanoidUnload:FindFirstChild("HumanoidUnload") then
+			Player.PlayerScripts.HumanoidUnload.HumanoidUnload.Disabled = true
+		end
+	end)
+
+	Humanoid.Died:Connect(function()
+		Character, Humanoid, Root = nil, nil, nil
+	end)
+end
+
+local function OnVehicleAdded()
+	local VehicleModel = GetVehicleModel()
+
+	if not VehicleModel then
+		Vehicle = nil
+	else
+		Vehicle = VehicleModel
+	end
+end
+
+if Player.Character then
+	OnPlayerAdded(Player.Character)
+end
+
+Player.CharacterAdded:Connect(OnPlayerAdded)
+
+Modules.VehicleUtils.OnVehicleEntered:Connect(OnVehicleAdded)
+Modules.VehicleUtils.OnVehicleExited:Connect(OnVehicleAdded)
+
+--> [[ Load Bypass ]] <--
+
+LPH_NO_VIRTUALIZE(function()
+	for _, v in getgc(true) do
+		if typeof(v) == "function" then
+			if getfenv(v).script == Player.PlayerScripts.LocalScript then
+				if debug.info(v, "n"):match("CheatCheck") then
+					hookfunction(v, function() end)
+				elseif TableFind(debug.getconstants(v), "Stunned") then
+					hookfunction(v, function() end)
+				end
+			elseif getfenv(v).script == ReplicatedStorage.Game.MilitaryTurret.MilitaryTurret then
+				if debug.info(v, "n"):match("_fire") then
+					hookfunction(v, function() end)
+				end
+			end
+		end
+	end
+end)()
+
+--> [[ Load Distance ]] <--
+
+local function DistanceXYZ(pos)
+	local Success, Result = pcall(function() return (Player.Character.HumanoidRootPart.Position - pos).Magnitude end)
+
+	return Success and Result or math.huge
+end
+
+local function DistanceXZ(pos1, pos2)
+	return (Vector3New(pos1.X, 0, pos1.Z) - Vector3New(pos2.X, 0, pos2.Z)).Magnitude
+end
+
+--> [[ Load Raycasting ]] <--
+
+local RaycastDirections = { High = Vector3.new(0, 999, 0), Low = Vector3.new(0, -999, 0) }
+
+local Raycast; Raycast = {
+	Ignored = {Workspace.Vehicles, Workspace.VehicleSpawns},
+	Ignorable = {"Items", "Plane", "Rain", "RainSnow", "RainFall", "DirtRoad"},
+
+	Start = function(start, dir, ignore)
+		if ignore then 
+			Raycast.Ignored[#Raycast.Ignored + 1] = ignore 
+		end
+
+		RaycastParams.FilterDescendantsInstances = Raycast.Ignored
+		return Workspace:Raycast(start, dir, RaycastParams)
+	end,
+
+	OnChildAdded = function(child)
+		if TableFind(Raycast.Ignorable, child.Name) then
+			Raycast.Ignored[#Raycast.Ignored + 1] = child
+		end
+	end,
+
+	OnChildRemoved = function(child)
+		if TableFind(Raycast.Ignorable, child.Name) then
+			TableRemove(Raycast.Ignored, TableFind(Raycast.Ignored, child))
+		end
+	end
+}
+
+Workspace.ChildAdded:Connect(Raycast.OnChildAdded)
+Workspace.ChildRemoved:Connect(Raycast.OnChildRemoved)
+
+for _, v in Workspace:GetChildren() do
+	if v.Name == "Bench" then
+		v:Destroy()
+	end
+
+	Raycast.OnChildAdded(v)
+end
+
+for _, v in CollectionService:GetTagged("Tree") do
+	Raycast.Ignored[#Raycast.Ignored + 1] = v
+end
+
+for _, v in CollectionService:GetTagged("NoClipAllowed") do
+	Raycast.Ignored[#Raycast.Ignored + 1] = v
+end
+
+--> [[ Load Teleportation ]] <--
+
+local function DetectLagBack(pos)
+	Wait(0.75)
+
+	return DistanceXZ(Root.Position, pos) > 30
+end
+
+local LightingManager = {
+	ObjectsToManage = {},
+}
+
+function LightingManager:AddLightingObject(obj, props)
+	self.ObjectsToManage[obj.Name] = {
+		object = obj,
+		savedProperties = {},
+		propertyNames = props,
+		toggle = false,
+		debounce = false,
+	}
+end
+
+function LightingManager:SaveLightingProperties(target, object)
+	if target.debounce then return end
+
+	if object then
+		target.savedProperties[object] = target.object[object]
+	else
+		for _, prop in target.propertyNames do
+			target.savedProperties[prop] = target.object[prop]
+		end
+	end
+end
+
+function LightingManager:SetLightingProperties(target)
+	target.debounce = true
+
+	if not target.toggle then
+		target.object.Enabled = false
+	else
+		for _, prop in target.propertyNames do
+			target.object[prop] = target.savedProperties[prop]
+		end
+	end
+
+	target.debounce = false
+end
+
+function LightingManager:SetLightingEffect(name, state)
+	if self.ObjectsToManage[name] then
+		self.ObjectsToManage[name].toggle = state
+		self:SetLightingProperties(self.ObjectsToManage[name])
+	end
+end
+
+while not pcall(function()
+		LightingManager:AddLightingObject(Lighting.Blur, {"Enabled"})
+
+		for _, obj in Lighting:GetChildren() do
+			if obj.Name == "ColorCorrection" and obj.Brightness == 0 then
+				LightingManager:AddLightingObject(obj, {"Enabled"})
+			end
+		end
+	end) do 
+	Wait(0.01) 
+end
+
+for _, v in LightingManager.ObjectsToManage do
+	LightingManager:SaveLightingProperties(v)
+
+	v.object.Changed:Connect(function(propertyName)
+		if not v.debounce then
+			LightingManager:SaveLightingProperties(v, propertyName)
+			LightingManager:SetLightingProperties(v)
+		end
+	end)
+end
+
+LightingManager:SetLightingEffect("Blur", false)
+LightingManager:SetLightingEffect("ColorCorrection", false)
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+
+local function ExitVehicle()
+	if not Character or not Root or not Humanoid or Player.Character.Humanoid.Health < 1 or IsArrested() then
+		return
+	end
+
+	repeat
+		Modules.CharacterUtil.OnJump()
+		Wait()
+	until not Vehicle
+end
+
+local SafeDeath = false
+
+local function InstantTP(pos, opt)
+	if not Character or not Root or not Humanoid or Player.Character.Humanoid.Health < 1 or IsArrested() then
+		return error()
+	end
+
+	if Vehicle then
+		ExitVehicle()
+	end
+
+	local FallBack = 5
+
+	repeat
+		if DistanceXZ(Vector3New(pos.X, pos.Y, pos.Z), Root.Position) > 30 then
+			local SpawnRemover = {}
+
+			SpawnRemover = PlayerGui.AppUI.ChildAdded:Connect(function(gui)
+				if gui.Name == "ChooseSpawn" then
+					gui:Destroy()
+					SpawnRemover:Disconnect()
+				end
+			end)
+
+			local ViewPart = Instance.new("Part")
+			ViewPart.CFrame = pos
+			ViewPart.Anchored = true
+			ViewPart.CanCollide = false
+			ViewPart.Transparency = 1
+			ViewPart.Parent = Workspace
+
+			if PlayerGui:FindFirstChild("DeathGui") then PlayerGui.DeathGui.Enabled = false end
+			if PlayerGui:FindFirstChild("ContractPopupGui") then PlayerGui.ContractPopupGui.Enabled = false end
+
+			SafeDeath = true
+
+			local OldDeathVolume = Root:WaitForChild("Died").Volume
+
+			Root:WaitForChild("Died").Volume = 0
+			Humanoid:TakeDamage(Humanoid.MaxHealth)
+
+			while (not Character or not Humanoid or Player.Character.Humanoid.Health < 1) and not opt() do
+				if Camera.CameraSubject ~= ViewPart then
+					Camera.CameraSubject = ViewPart
+				end
+
+				Wait()
+			end
+
+			SafeDeath = false
+
+			if opt() then
+				return
+			end
+
+			Player.Character:WaitForChild("HumanoidRootPart").CFrame = pos
+			Root:WaitForChild("Died").Volume = OldDeathVolume
+			Camera.CameraSubject = Humanoid
+			ViewPart:Destroy()
+		else
+			Root.CFrame = pos
+		end
+
+		FallBack = FallBack - 1
+	until not DetectLagBack(Vector3New(pos.X, pos.Y, pos.Z)) or FallBack == 0 or opt()
+
+	if opt() then
+		return error()
+	end
+
+	if DistanceXYZ(Vector3New(pos.X, pos.Y, pos.Z)) > 30 or FallBack == 0 then
+		return error()
+	end
+end
+
+local FlightMove = LPH_JIT_MAX(function(pos)
+	local Speed = -Config["FlightSpeed"]
+	local GetPosition = function() return Vector3.new(pos.x, 500, pos.z) end
+	local GetRoot = function() return Root end
+
+	Character:PivotTo(CFrame.new(Root.Position.x, 500, Root.Position.z))
+
+	local Distance = GetRoot().Position - GetPosition()
+
+	while Distance.Magnitude > 10 do	
+		Distance = GetRoot().Position - GetPosition()
+		local velocity = Distance.Unit * Speed
+		velocity = Vector3.new(velocity.x, 0, velocity.z)
+
+		GetRoot().Velocity = velocity
+		Character:PivotTo(CFrame.new(Root.Position.x, 500, Root.Position.z))
+		task.wait()
+	end
+
+	GetRoot().Velocity = Vector3.zero
+	Character:PivotTo(pos)
+end)
+
+--> [[ Load Webhook Logging ]] <--
+
+local Request = (http and http.request) or (syn and syn.request) or request or HttpPost or http_request
+
+local function LogWebhook(text)
+	pcall(function()
+		local MoneyMade = Leaderstats.Money.Value - getgenv()._StartingCash
+		local RunTime = tick() - getgenv()._StartingTime
+		local ClockTime = os.date("!%Y-%m-%dT%H:%M:%SZ")
+
+		local Headers = {
+			["Content-Type"] = "application/json"
+		}
+
+		local data = {
+			["content"] = nil,
+			["embeds"] = {
+				{
+					["title"] = "Cashfarm Jailbreak",
+					["description"] = "``👨‍💼`` **Username**: " .. tostring(Player.Name) .. "\n``💲`` **Money Earned**: $" .. FormatMoney(MoneyMade) .. "\n``💲`` **Money**: " .. FormatMoney(Leaderstats.Money.Value) .. "\n``❓`` **Estimated Hourly**: $" .. FormatMoney(MathFloor(MoneyMade / RunTime * 3600)) .. "\n``⌛`` **Elapsed Time**: " .. FormatTime(RunTime) .. "\n```" .. tostring(text) .. "```",
+					["color"] = 65403,
+					["footer"] = {
+						["text"] = "https://cashfarm.cc"
+					},
+					["timestamp"] = ClockTime
+				}
+			},
+			["attachments"] = {}
+		}		
+
+		Request({Url = tostring(Config.WebhookUrl), Body = HttpService:JSONEncode(data), Method = "POST", Headers = Headers})
+	end)
+end
+
+local function LogHyper(message)
+	pcall(function()
+		local RunTime = tick() - getgenv()._StartingTime
+		local ClockTime = os.date("!%Y-%m-%dT%H:%M:%SZ")
+
+		local Headers = {
+			["Content-Type"] = "application/json"
+		}
+
+		local data = {
+			["content"] = nil,
+			["embeds"] = {
+				{
+					["title"] = "Cashfarm Jailbreak",
+					["description"] = "``👨‍💼`` **Username**: " .. tostring(Player.Name) .. "\n``⌛`` **Elapsed Time**: " .. FormatTime(RunTime) .. "\n```You have received a " .. message .. "!```",
+					["color"] = 65403,
+					["footer"] = {
+						["text"] = "https://cashfarm.cc"
+					},
+					["timestamp"] = ClockTime
+				}
+			},
+			["attachments"] = {}
+		}		
+
+		Request({Url = tostring(Config.WebhookUrl), Body = HttpService:JSONEncode(data), Method = "POST", Headers = Headers})
+	end)
+end
+
+--> [[ Load Misc ]] <--
+
+local TimesRobbed = 0
+local MessageSent = false
+
+local function HandleChatMessage(message)
+	local MessageText = tostring(message.Text)
+
+	if StringFind(MessageText, Player.DisplayName .. " robbed the cargo ship for") then
+		TimesRobbed = TimesRobbed + 1
+	elseif Config.LogHypers and Config.WebhookUrl ~= "" then
+		if MessageSent then return end
+
+		if message.TextSource then
+			return
+		end
+
+		if (StringFind(MessageText, "Hyper") or StringFind(MessageText, "HyperChrome")) and (StringFind(MessageText, Player.Name) or StringFind(MessageText, Player.DisplayName)) then
+			local CleanMessage = MessageText
+			CleanMessage = CleanMessage:gsub('<[^>]+>', '')
+			CleanMessage = CleanMessage:gsub(Player.Name, "")
+			CleanMessage = CleanMessage:gsub("got a", "")
+
+			LogHyper(CleanMessage)
+			MessageSent = true
+
+			Delay(5, function()
+				MessageSent = false
+			end)
+		end
+	end
+end
+
+TextChatService.MessageReceived:Connect(HandleChatMessage)
+
+local SetThreadId = setidentity or set_thread_identity or setcontext or setthreadcontext or set_thread_context
+
+local function GetWeapon(bool)
+	SetThreadId(2)
+	pcall(Modules.GunShopUI.open)
+
+	repeat
+		for _, v in Modules.GunShopUI.gui.Container.Container.Main.Container.Slider:GetChildren() do
+			if bool and v:IsA("ImageLabel") and (v.Bottom.Action.Text == "EQUIP" or v.Bottom.Action.Text == "FREE") and v.Name == "Pistol" then
+				firesignal(PlayerGui.GunShopGui.Container.Container.Main.Container.Slider.Pistol.Bottom.Action.MouseButton1Down)
+			elseif not bool and v.Name == "Pistol" then
+				firesignal(PlayerGui.GunShopGui.Container.Container.Main.Container.Slider.Pistol.Bottom.Action.MouseButton1Down)
+			end
+		end
+
+		Wait(0.01)
+	until (bool and Backpack:FindFirstChild("Pistol")) or not Backpack:FindFirstChild("Pistol")
+
+	SetThreadId(8)
+	pcall(Modules.GunShopUI.close)
+end
+
+local function EquipWeapon(bool)
+	if not Backpack:FindFirstChild("Pistol") then 
+		GetWeapon(true) 
+	end
+
+	if not Backpack:FindFirstChild("Pistol") then 
+		return
+	end
+
+	Modules.InventoryItem.AttemptSetEquipped({ obj = Backpack.Pistol }, bool)
+end
+
+local function ShootWeapon()
+	local CurrentWeapon = Modules.ItemSystem.GetLocalEquipped
+
+	if Backpack:FindFirstChild("Pistol") and Backpack.Pistol:GetAttribute("AmmoCurrent") == 0 then
+		GetWeapon(false)
+	end
+
+	if not CurrentWeapon() then 
+		EquipWeapon(true) 
+	end
+
+	Modules.GunItem._attemptShoot(CurrentWeapon())
+end
+
+local function GetClosestCop()
+	for _, v in Players:GetPlayers() do
+		if v.Team.Name == "Police" and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+			if DistanceXZ(v.Character.HumanoidRootPart.Position, Root.Position) < Config.KillAuraDistance then
+				return v
+			end
+		end
+	end
+
+	return nil
+end
+
+local function WaitForReward()
+	if PlayerGui.AppUI:FindFirstChild("RewardSpinner") then
+		CanServerHop = false
+
+		repeat
+			Wait()
+		until not PlayerGui.AppUI:FindFirstChild("RewardSpinner")
+
+		CanServerHop = true
+	end
+end
+
+local function CanRobMansion()
+	return Config[Player.Name] > 0
+end
+
+local function AddMansionInvite()
+	if Config[Player.Name] > 299 then
+		return
+	end
+
+	Config[Player.Name] = Config[Player.Name] + 1
+	SaveConfig()
+end
+
+local function RemoveMansionInvite()
+	Config[Player.Name] = Config[Player.Name] - 1
+	SaveConfig()
+end
+
+--> [[ Load Robberies ]] <--
+
+Robberies["Cargo Ship"].Callback = function()
+	if not Character or not Root or not Humanoid or Player.Character.Humanoid.Health < 1 or IsArrested() then
+		return
+	end
+
+	if not Config.CargoShip then 
+		return 
+	end
+
+	if not Robberies["Cargo Ship"].Open then
+		return
+	end
+
+	if Config.LogWebhook and Config.WebhookUrl ~= "" then
+		Spawn(LogWebhook, "Robbing ship..")
+	end
+
+	local SortedCars = Workspace.Vehicles:GetChildren()
+
+	local OwnedHelis = {"Heli"}
+	local OtherHelis = {"LittleBird", "BlackHawk", "Escape Bot"}
+
+	for i, _ in Modules.Store._state.garageOwned.Vehicles do
+		if TableFind(OtherHelis, i) then
+			TableInsert(OwnedHelis, i)
+		end
+	end
+
+	table.sort(SortedCars, function(v, v2) 
+		local v3 = v.PrimaryPart or v:FindFirstChildWhichIsA("Part")
+		local v4 = v2.PrimaryPart or v2:FindFirstChildWhichIsA("Part")
+
+		if v3 ~= nil and v4 ~= nil then
+			return DistanceXZ(v3.Position, Root.Position) < DistanceXZ(v4.Position, Root.Position)
+		end
+	end)
+
+	for _, v in SortedCars do
+		if v.PrimaryPart and v.Seat and TableFind(OwnedHelis, v.Name) and v.Seat.Position.Y < 300 and not v:GetAttribute("VehicleHasDriver") and not Raycast.Start(v.PrimaryPart.Position, Vector3New(0, 1000, 0)) and Robberies["Cargo Ship"].Open and not v:GetAttribute("Locked") then
+			UpdateStatus("TPing to heli..")
+
+			if DistanceXZ(v.PrimaryPart.Position, Root.Position) < (Config.FlightSpeed * 4) and not Raycast.Start(Root.Position + Vector3New(0, 5, 0), RaycastDirections.High) then
+				FlightMove(v.Seat.CFrame * CFrameNew(0, 2.5, 0))
+			else
+				InstantTP(v.Seat.CFrame * CFrameNew(0, 5, 0), function()
+					return not v or not v:FindFirstChild("Seat") or v:GetAttribute("VehicleHasDriver")
+				end)
+			end
+
+			UpdateStatus("Entering helicopter..")
+
+			for _ = 1, 10 do
+				if DistanceXZ(v.Seat.Position, Root.Position) > 10 and DistanceXZ(v.Seat.Position, Root.Position) < 30 then
+					Root.CFrame = v.Seat.CFrame * CFrameNew(0, 2.5, 0)
+				elseif DistanceXZ(v.Seat.Position, Root.Position) > 30 then
+					FlightMove(v.Seat.CFrame * CFrameNew(0, 2.5, 0))
+				end
+
+				for _, spec in Specs do
+					if spec.Part == v.Seat then
+						spec:Callback(true)
+					end
+				end
+
+				local TickTimeout = tick()
+
+				repeat
+					Wait()
+				until tick() - TickTimeout > 0.25 or Vehicle or v:GetAttribute("VehicleHasDriver") or v:GetAttribute("Locked")
+
+				if Vehicle or v:GetAttribute("VehicleHasDriver") then
+					break
+				end
+			end
+
+			if Vehicle then
+				break
+			end
+
+			if not Robberies["Cargo Ship"].Open then
+				return error()
+			end
+		end
+	end
+
+	if not Robberies["Cargo Ship"].Open then
+		return
+	end
+
+	if not Vehicle then
+		Robberies["Cargo Ship"].Robbed = true
+		return error()
+	end
+
+	Robberies["Cargo Ship"].Robbed = true
+
+	Vehicle:PivotTo(CFrameNew(Root.Position.X, 300, Root.Position.Z))
+	Wait(0.25)
+
+	if not Vehicle.Preset:FindFirstChild("RopePull") then
+		UpdateStatus("Deploying rope..")
+
+		local TickTimeout = tick()
+
+		repeat
+			Modules.VehicleUtils.Classes.Heli.attemptDropRope()
+
+			local TickTimeout2 = tick()
+
+			repeat
+				Wait()
+			until tick() - TickTimeout2 > 1
+		until Vehicle.Preset:FindFirstChild("RopePull") or tick() - TickTimeout > 5
+
+		if not Vehicle.Preset:FindFirstChild("RopePull") then
+			return
+		end
+	end
+
+	local RopeConstraint = Vehicle.Winch:FindFirstChild("RopeConstraint")
+	local RopePull = Vehicle.Preset:FindFirstChild("RopePull")
+
+	if RopeConstraint and RopePull then
+		RopeConstraint.Length = 999
+		RopeConstraint.WinchEnabled = true
+		RopePull.CanCollide = false
+		RopePull.Massless = true
+	else
+		return
+	end
+
+	TimesRobbed = 0
+	Wait(1.75)
+
+	if not Robberies["Cargo Ship"].Open then
+		return
+	end
+
+	UpdateStatus("Collecting & robbing crates..")
+
+	for _, crate in Workspace.CargoShip.Crates:GetChildren() do
+		if not Robberies["Cargo Ship"].Open then
+			return
+		end	
+
+		Camera.CameraType = Enum.CameraType.Scriptable
+		Camera.CFrame = crate.MeshPart.CFrame
+
+		Wait(1)
+
+		Camera.CameraType = Enum.CameraType.Custom
+		Camera.CameraSubject = Humanoid
+
+		local TickTimeout1 = tick()
+
+		repeat
+			RopePull.CFrame = crate.PrimaryPart.CFrame
+			RopePull.ReqLink:FireServer(crate, Vector3.zero)
+			Wait()
+		until RopePull.AttachedTo.Value or not Robberies["Cargo Ship"].Open or not RopePull:FindFirstChild("ReqLink") or tick() - TickTimeout1 > 10
+
+		if not Robberies["Cargo Ship"].Open or not RopePull:FindFirstChild("ReqLink") then
+			return 
+		end
+
+		if RopePull.AttachedTo.Value then
+			if TimesRobbed == 1 then
+				WaitForReward()
+			end
+
+			local TickTimeout2 = tick()
+
+			repeat
+				RopePull.CFrame = crate.PrimaryPart.CFrame
+				crate:SetPrimaryPartCFrame(CFrameNew(-475, -43, 1905))
+				Wait()
+			until not crate or not crate:FindFirstChild("MeshPart") or not RopePull:FindFirstChild("ReqLink") or tick() - TickTimeout2 > 10
+
+			if tick() - TickTimeout2 > 10 then
+				return
+			end
+
+			if not RopePull:FindFirstChild("ReqLink") then
+				return 
+			end
+		end
+
+		if TimesRobbed == 2 then
+			break
+		end
+	end
+
+	if Config.LogWebhook and Config.WebhookUrl ~= "" then
+		Spawn(LogWebhook, "Robbed ship!")
+	end
+end
+
+Robberies.Airdrop.Callback = function(model)
+	if not Character or not Root or not Humanoid or Player.Character.Humanoid.Health < 1 or IsArrested() then
+		return
+	end
+
+	if not Config.Airdrop then 
+		return 
+	end
+
+	if not model or not model.PrimaryPart then
+		return 
+	end
+
+	if Config.LogWebhook and Config.WebhookUrl ~= "" then
+		Spawn(LogWebhook, "Robbing drop..")
+	end
+
+	if not model:GetAttribute("BriefcaseLanded") then
+		UpdateStatus("Waiting for drop..")
+
+		Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+		Humanoid.Sit = true
+
+		repeat
+			Wait()
+		until model:GetAttribute("BriefcaseLanded")
+
+		Humanoid.Sit = false
+	end
+
+	Spawn(function()
+		pcall(function()
+			while model and model:FindFirstChild("NPCs") == nil do
+				Wait(0.1)
+			end
+
+			model.NPCs:Destroy()
+		end)
+	end)
+
+	UpdateStatus("TPing on drop..")
+
+	InstantTP(model.PrimaryPart.CFrame * CFrameNew(0, 5, 0), function()
+		return not model or not model.PrimaryPart or model:GetAttribute("BriefcaseCollected")
+	end)
+
+	if not model or not model.PrimaryPart or model:GetAttribute("BriefcaseCollected") then
+		return error()
+	end
+
+	local BodyVelocity = Instance.new("BodyVelocity", Root)
+	BodyVelocity.P = 3000
+	BodyVelocity.MaxForce = Vector3New(9e9, 9e9, 9e9)
+	BodyVelocity.Velocity = Vector3New()
+
+	Root.CFrame = model.PrimaryPart.CFrame * CFrameNew(0, 5, 0)
+
+	Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+	Humanoid.Sit = true
+
+	if Player.Team.Name == "Prisoner" then
+		local TickTimeout = tick()
+
+		UpdateStatus("Awaiting team change..")
+
+		repeat 
+			Wait() 
+		until tick() - TickTimeout > 10 or Player.Team.Name ~= "Prisoner" or not model or not model.PrimaryPart or model:GetAttribute("BriefcaseCollected") 
+
+		if Player.Team.Name == "Prisoner" or not model or not model.PrimaryPart or model:GetAttribute("BriefcaseCollected") then 
+			BodyVelocity:Destroy()
+			Humanoid.Sit = false
+			return error()
+		end
+	end
+
+	UpdateStatus("Collecting drop..")
+
+	repeat
+		pcall(function()
+			model.BriefcasePress:FireServer()
+
+			local TickTimeout = tick()
+
+			repeat
+				Wait()
+			until tick() - TickTimeout > 1 or model:GetAttribute("BriefcaseCollected")
+
+			model.BriefcaseRelease:FireServer()
+			model.BriefcaseCollect:FireServer()
+		end)
+	until model:GetAttribute("BriefcaseCollected") or not model or not model.PrimaryPart or DistanceXZ(model.PrimaryPart.Position, Root.Position) > 10
+
+	BodyVelocity:Destroy()
+
+	if DistanceXZ(model.PrimaryPart.Position, Root.Position) > 10 then
+		Humanoid.Sit = false
+		return error()
+	end
+
+	if not model or not model.PrimaryPart then
+		Humanoid.Sit = false
+		return error()
+	end
+
+	Root.CFrame = model.PrimaryPart.CFrame * CFrameNew(0, 5, 0)
+
+	AddMansionInvite()
+	model.Name = ""
+
+	Wait(0.15)
+
+	if Config.CollectCash then
+		Spawn(function()
+			local CanGrabNow = false
+
+			while not CanGrabNow do
+				for _, v in Workspace.DroppedCash:GetChildren() do
+					if v:IsA("Model") and v.PrimaryPart and v.PrimaryPart.Position.Y > 5 and DistanceXZ(v.PrimaryPart.Position, Root.Position) < 100 then
+						CanGrabNow = true
+					end
+				end
+
+				Wait(0.01)
+			end
+
+			for _ = 1, 10 do
+				for _, spec in Specs do
+					if spec.Name:sub(1, 9) == "Collect $" then
+						spec:Callback(true)
+					end
+				end
+
+				Wait(0.1)
+			end
+		end)
+	end
+
+	UpdateStatus("Waiting for reward..")
+	WaitForReward()
+
+	if Config.PickUpCash then
+		Spawn(function()
+			for _ = 1, 10 do
+				for _, v in Specs do
+					if v.Name:sub(1, 9) == "Collect $" then
+						pcall(function()
+							v:Callback(true)
+						end)
+					end
+				end
+
+				Wait(0.1)
+			end
+		end)
+	end
+
+	if Config.LogWebhook and Config.WebhookUrl ~= "" then
+		Spawn(LogWebhook, "Robbed drop!")
+	end
+
+	Humanoid.Sit = false
+end
+
+Robberies.Mansion.Callback = function()
+	if not Character or not Root or not Humanoid or Player.Character.Humanoid.Health < 1 or IsArrested() then
+		return
+	end
+
+	if not Robberies.Mansion.Open then
+		return
+	end
+
+	if not Config.Mansion then 
+		return 
+	end
+
+	if Vehicle then
+		ExitVehicle()
+	end
+
+	if Config.LogWebhook and Config.WebhookUrl ~= "" then
+		Spawn(LogWebhook, "Robbing mansion..")
+	end
+
+	UpdateStatus("Entering elevator..")
+
+	local MansionRobbery = Workspace.MansionRobbery
+	local TouchToEnter = MansionRobbery.Lobby.EntranceElevator.TouchToEnter
+	local TriggerFoundBossRoom = MansionRobbery.TriggerFoundBossRoom
+	local ElevatorDoor = MansionRobbery.ArrivalElevator.Floors:GetChildren()[1].DoorLeft.InnerModel.Door
+	local MansionTeleportCFrame = TouchToEnter.CFrame - Vector3New(0, TouchToEnter.Size.Y / 2 - Player.Character.Humanoid.HipHeight * 2, -TouchToEnter.Size.Z)
+	local MansionActivateDoor = CFrameNew(3154, -205, -4558)
+	local FailMansion = false
+	local FailedStart = false
+
+	Delay(10, function()
+		FailMansion = true
+	end)
+
+	local ElevatorTP = RunService.Heartbeat:Connect(function()
+		Root.CFrame = MansionTeleportCFrame		
+	end)
+
+	repeat
+		firetouchinterest(Root, TouchToEnter, 0)
+		Wait()
+		firetouchinterest(Root, TouchToEnter, 1)
+	until Modules.MansionRobberyUtils.isPlayerInElevator(MansionRobbery, Player) or FailMansion
+
+	ElevatorTP:Disconnect()
+
+	if FailMansion then
+		Humanoid.Health = 0
+		return
+	end
+
+	Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+	Humanoid.Sit = true
+
+	Wait(0.75)
+	Root.CFrame = CFrameNew(3198, 63, -4659)
+
+	GetWeapon(true)
+	UpdateStatus("Waiting for elevator..")
+	RemoveMansionInvite()
+
+	repeat
+		Wait(0.1)
+	until ElevatorDoor.Position.X > 3208
+
+	Humanoid.Sit = false
+	KillAuraPaused = true
+
+	for _, instance in MansionRobbery.Lasers:GetChildren() do
+		instance:Remove()
+	end
+
+	for _, instance in MansionRobbery.LaserTraps:GetChildren() do
+		instance:Remove()
+	end
+
+	Delay(12.5, function()
+		FailedStart = true
+	end)
+
+	local CutsceneTP = RunService.Heartbeat:Connect(function()
+		Root.CFrame = MansionActivateDoor
+	end)
+
+	UpdateStatus("Triggering cutscene..")
+
+	repeat 
+		firetouchinterest(Root, TriggerFoundBossRoom, 0)
+		Wait()
+		firetouchinterest(Root, TriggerFoundBossRoom, 1)
+	until MansionRobbery:GetAttribute("MansionRobberyProgressionState") == 3 or Humanoid.Health <= 0 or not Character or FailedStart
+
+	CutsceneTP:Disconnect()
+
+	if FailedStart then
+		Humanoid.Health = 0
+		return
+	end
+
+	UpdateStatus("Waiting for cutscene..")
+	Modules.MansionRobberyUtils.getProgressionStateChangedSignal(MansionRobbery):Wait()
+
+	local BodyVelocity = Instance.new("BodyVelocity", Root)
+	BodyVelocity.P = 3000
+	BodyVelocity.MaxForce = Vector3New(9e9, 9e9, 9e9)
+	BodyVelocity.Velocity = Vector3New()
+
+	local OrigY = Root.CFrame.Y
+	Root.CFrame = CFrameNew(Root.CFrame.X, OrigY + 9, Root.CFrame.Z)
+
+	local NPCs = {}
+
+	Modules.NPC.new = function(NPC, ...)
+		if NPC.Name ~= "ActiveBoss" then
+			TableInsert(NPCs, NPC)
+		end
+
+		return OldNpcNew(NPC, ...)
+	end
+
+	Modules.NPC.GetTarget = function()
+		return MansionRobbery and MansionRobbery:FindFirstChild("ActiveBoss") and MansionRobbery:FindFirstChild("ActiveBoss").Head 
+	end
+
+	Workspace.Items.DescendantAdded:Connect(function(v)
+		if v:IsA("BasePart") then
+			v.Transparency = 1
+
+			v:GetPropertyChangedSignal("Transparency"):Connect(function()
+				v.Transparency = 1
+			end)
+		end
+	end)
+
+	for _, v in ReplicatedStorage.Game.Item:GetChildren() do
+		require(v).ReloadDropAmmoVisual = function() end
+		require(v).ReloadDropAmmoSound = function() end
+		require(v).ReloadRefillAmmoSound = function() end
+		require(v).ShootSound = function() end
+	end
+
+	getfenv(Modules.BulletEmitter.Emit).Instance = {
+		new = function()
+			return {
+				Destroy = function() end
+			}
+		end
+	}
+
+	local ActiveBoss = MansionRobbery:WaitForChild("ActiveBoss")
+	local OldHealth = ActiveBoss.Humanoid.Health
+
+	LPH_NO_VIRTUALIZE(function()
+		Modules.RayCast.RayIgnoreNonCollideWithIgnoreList = function(...)
+			local arg = {OldRaycastIgnoreList(...)}
+
+			if (tostring(getfenv(2).script) == "BulletEmitter" or tostring(getfenv(2).script) == "Taser") and ActiveBoss.Head then
+				arg[1] = ActiveBoss.Head
+				arg[2] = ActiveBoss.Head.Position
+			end
+
+			return unpack(arg)
+		end
+	end)()
+
+	local AttackState = Modules.BossNPCConsts.ATTACK_STATE
+
+	setreadonly(AttackState, false)
+
+	for key in pairs(AttackState) do
+    		AttackState[key] = nil
+	end
+
+	setreadonly(AttackState, true)
+
+	while ActiveBoss and ActiveBoss:FindFirstChild("HumanoidRootPart") and ActiveBoss.Humanoid.Health ~= 1 do
+		UpdateStatus("Killing boss.. (" .. MathFloor((OldHealth - ActiveBoss.Humanoid.Health) / OldHealth * 100) .. "%)")
+		EquipWeapon(true)
+		Wait(0.1)
+		pcall(ShootWeapon)
+	end
+
+	Modules.RayCast.RayIgnoreNonCollideWithIgnoreList = OldRaycastIgnoreList
+	Root.CFrame = CFrameNew(Root.CFrame.X, OrigY, Root.CFrame.Z)
+	BodyVelocity:Destroy()
+	EquipWeapon(false)
+
+	for _, v in NPCs do
+		pcall(function()
+			v:Destroy()
+		end)
+	end
+
+	UpdateStatus("Waiting for spinner..")
+
+	repeat 
+		Wait() 
+	until PlayerGui.AppUI:FindFirstChild("RewardSpinner")
+
+	UpdateStatus("Waiting for reward..")
+	WaitForReward()
+
+	if Config.LogWebhook and Config.WebhookUrl ~= "" then
+		Spawn(LogWebhook, "Robbed mansion!")
+	end
+
+	KillAuraPaused = false
+end
+
+do
+	Workspace.Terrain.WaterWaveSize = 0
+	Workspace.Terrain.WaterWaveSpeed = 0
+	Workspace.Terrain.WaterReflectance = 0
+	Workspace.Terrain.WaterTransparency = 0
+
+	Lighting.GlobalShadows = false
+	Lighting.FogEnd = 9e9
+	Lighting.Brightness = 0
+
+	settings().Rendering.QualityLevel = "Level01"
+
+	local function HideObject(v)
+		if v:IsA("Part") or v:IsA("CornerWedgePart") or v:IsA("TrussPart") then
+			v.Material = "Plastic"
+			v.Reflectance = 0
+		elseif v:IsA("Decal") or v:IsA("Texture") then
+			v.Transparency = 1
+		elseif v:IsA("Explosion") then
+			v.BlastPressure = 1
+			v.BlastRadius = 1
+		elseif v:IsA("Fire") or v:IsA("SpotLight") or v:IsA("Smoke") then
+			v.Enabled = false
+		elseif v:IsA("MeshPart") then
+			v.Material = "Plastic"
+			v.Reflectance = 0
+			v.TextureID = 10385902758728957
+		end
+	end
+
+	for _, v in game:GetDescendants() do
+		HideObject(v)
+	end
+
+	for _, v in Lighting:GetChildren() do
+		if v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect") or v:IsA("BloomEffect") or v:IsA("DepthOfFieldEffect") then
+			v.Enabled = false
+		end
+	end
+
+	Workspace.DescendantAdded:Connect(HideObject)
+end
+
+repeat Wait(0.1) until Character and Humanoid and Root
+repeat pcall(function() Modules.TeamChooseUI.Hide() end) Wait(0.1) until PlayerGui:FindFirstChild("TeamSelectGui") == nil or PlayerGui:FindFirstChild("TeamSelectGui").Enabled == false
+
+while Humanoid == nil do
+	Wait(0.1)
+end
+
+Loaded = true
+
+if Config.Airdrop then
+	local OldRootCFrame = Root.CFrame
+
+	Root.Anchored = true
+
+	local RenderPositions = {
+		Vector3New(-846, 39, -6231), 
+		Vector3New(-1541, 39, 3311), 
+		Vector3New(-363, 39, -6340), 
+		Vector3New(-820, 39, 3306), 
+		Vector3New(44, 39, -6409), 
+		Vector3New(811, 39, 3206), 
+		Vector3New(308, 39, -6350), 
+		Vector3New(979, 39, 3173), 
+		Vector3New(683, 39, -6267), 
+		Vector3New(1303, 39, 3150), 
+		Vector3New(1350, 39, -5764), 
+		Vector3New(1976, 39, 3028), 
+		Vector3New(2698, 39, -5365) 
+	}
+
+	for _, v in RenderPositions do
+		if GetAirdropModel() then
+			break
+		end
+
+		local TweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
+
+		pcall(function()
+			UpdateStatus("Scanning workspace..")
+
+			local Tween = TweenService:Create(Root, TweenInfo, {CFrame = CFrameNew(v)})
+			Tween:Play() 
+
+			Tween.Completed:Wait()
+		end)
+	end
+
+	Root.CFrame = OldRootCFrame
+	Root.Anchored = false
+end
+
+Spawn(LPH_JIT_MAX(function()
+	while Wait(0.01) do
+		if (IsArrested() or not SafeDeath and (not Humanoid or Player.Character.Humanoid.Health < 1)) and Enabled then
+			if Config.LogWebhook and Config.WebhookUrl ~= "" then
+				Spawn(LogWebhook, "Server switching..")
+			end
+
+			UpdateStatus("Server switching..")
+			return ServerSwitch()
+		end
+	end
+end))
+
+Spawn(function()
+	while Wait(0.5) do
+		if not Enabled or not Config.KillAura or KillAuraPaused or not Character or not Root or Vehicle then 
+			continue 
+		end
+
+		pcall(function()
+			local TargetCop = GetClosestCop()
+
+			if TargetCop then
+				Modules.RayCast.RayIgnoreNonCollideWithIgnoreList = function(...)
+					local arg = {OldRaycastIgnoreList(...)}
+
+					if (tostring(getfenv(2).script) == "BulletEmitter" or tostring(getfenv(2).script) == "Taser") and TargetCop and TargetCop.Character and TargetCop.Character:FindFirstChild("HumanoidRootPart") and TargetCop.Character:FindFirstChild("Humanoid") and DistanceXYZ(TargetCop.Character.HumanoidRootPart.Position) < Config.KillAuraDistance and TargetCop.Character.Humanoid.Health > 0 then
+						arg[1] = TargetCop.Character.HumanoidRootPart
+						arg[2] = TargetCop.Character.HumanoidRootPart.Position
+						arg[3] = TargetCop.Character.HumanoidRootPart.Position
+					end
+
+					return unpack(arg)
+				end
+
+				if not Backpack:FindFirstChild("Pistol") then
+					GetWeapon(true)
+				end
+
+				if Backpack:FindFirstChild("Pistol") then
+					while Backpack:FindFirstChild("Pistol") and TargetCop and TargetCop.Character and TargetCop.Character:FindFirstChild("HumanoidRootPart") and TargetCop.Character:FindFirstChild("Humanoid") and DistanceXYZ(TargetCop.Character.HumanoidRootPart.Position) < Config.KillAuraDistance and TargetCop.Character.Humanoid.Health > 0 and not KillAuraPaused and Config.KillAura and not Vehicle do
+						EquipWeapon(true)
+						Wait()
+						ShootWeapon()
+					end
+
+					EquipWeapon(false)
+					Modules.RayCast.RayIgnoreNonCollideWithIgnoreList = OldRaycastIgnoreList
+				end
+			else
+				Modules.RayCast.RayIgnoreNonCollideWithIgnoreList = OldRaycastIgnoreList
+			end
+		end)
+	end
+end)
+
+while Wait() do
+	if Robberies["Cargo Ship"].Open and not Robberies["Cargo Ship"].Robbed and Config.CargoShip and Enabled then
+		pcall(Robberies["Cargo Ship"].Callback)
+	elseif GetAirdropModel() and Config.Airdrop and Enabled then 
+		warn(pcall(Robberies.Airdrop.Callback, GetAirdropModel()))
+
+		if Config.AutoOpenSafes then
+				local SafeInventoryItems = #Modules.Store._state.safesInventoryItems
+
+				if SafeInventoryItems ~= 0 then
+					CanServerHop = false
+
+					for _ = 1, SafeInventoryItems do
+						local CurrentSafe = Modules.Store._state.safesInventoryItems[1]
+
+						ReplicatedStorage[Modules.SafesConsts.SAFE_OPEN_REMOTE_NAME]:FireServer(CurrentSafe.itemOwnedId)
+						Wait(3)
+                        
+						if not Config.AutoOpenSafes then 
+							break
+						end
+					end
+
+					WaitForReward()
+					CanServerHop = true
+				end
+		end
+	elseif Robberies.Mansion.Open and CanRobMansion() and Config.Mansion and Enabled then
+		warn(pcall(Robberies.Mansion.Callback))
+	elseif Enabled then
+		if Config.LogWebhook and Config.WebhookUrl ~= "" then
+			Spawn(LogWebhook, "Server switching..")
+		end
+
+		UpdateStatus("Server switching..")
+		return ServerSwitch()
+	else
+		UpdateStatus("Script disabled.")
+	end
+end
